@@ -7,6 +7,8 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt"); // To hash passwords
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const jwt = require("jsonwebtoken");
+
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -30,7 +32,7 @@ async function run() {
     const db = client.db("zenWhisper");
     const userCollection = db.collection("users");
 
-    // POST API to create a new user
+    //! POST API to create a new user
     app.post("/signup", async (req, res) => {
       const { username, email, password } = req.body;
       console.log(username, email, password);
@@ -51,6 +53,32 @@ async function run() {
       await userCollection.insertOne(newUser);
       res.status(201).json({ message: "User registered successfully." });
     });
+
+   app.post("/login", async (req, res) => {
+     const { email, password } = req.body;
+
+     if (!email || !password) {
+       return res
+         .status(400)
+         .json({ message: "Email and password are required." });
+     }
+
+     const user = await userCollection.findOne({ email });
+     if (!user) {
+       return res.status(400).json({ message: "Invalid email or password." });
+     }
+
+     const isPasswordValid = await bcrypt.compare(password, user.password);
+     if (!isPasswordValid) {
+       return res.status(400).json({ message: "Invalid email or password." });
+     }
+
+     const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
+       expiresIn: "12h",
+     });
+     res.json({ message: "Login successful", token });
+   });
+
   } catch (err) {
     console.error("MongoDB connection error:", err);
   }
