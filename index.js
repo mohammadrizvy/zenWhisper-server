@@ -9,7 +9,6 @@ const bcrypt = require("bcrypt"); // To hash passwords
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const jwt = require("jsonwebtoken");
 
-
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -31,6 +30,11 @@ async function run() {
 
     const db = client.db("zenWhisper");
     const userCollection = db.collection("users");
+
+    app.get("/users", async (req, res) => {
+      const result = await userCollection.find({}).toArray();
+      res.send(result);
+    });
 
     //! POST API to create a new user
     app.post("/signup", async (req, res) => {
@@ -54,31 +58,31 @@ async function run() {
       res.status(201).json({ message: "User registered successfully." });
     });
 
-   app.post("/login", async (req, res) => {
-     const { email, password } = req.body;
+    app.post("/login", async (req, res) => {
+      const { email, password } = req.body;
 
-     if (!email || !password) {
-       return res
-         .status(400)
-         .json({ message: "Email and password are required." });
-     }
+      if (!email || !password) {
+        return res
+          .status(400)
+          .json({ message: "Email and password are required." });
+      }
 
-     const user = await userCollection.findOne({ email });
-     if (!user) {
-       return res.status(400).json({ message: "Invalid email or password." });
-     }
+      const user = await userCollection.findOne({ email });
+      if (!user) {
+        return res.status(400).json({ message: "Invalid email or password." });
+      }
 
-     const isPasswordValid = await bcrypt.compare(password, user.password);
-     if (!isPasswordValid) {
-       return res.status(400).json({ message: "Invalid email or password." });
-     }
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(400).json({ message: "Invalid email or password." });
+      }
 
-     const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
-       expiresIn: "12h",
-     });
-     res.json({ message: "Login successful", token });
-   });
-
+      const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
+        expiresIn: "12h",
+      });
+      const userInfo = { username: user.username, email: user.email };
+      res.json({ message: "Login successful", token, userInfo });
+    });
   } catch (err) {
     console.error("MongoDB connection error:", err);
   }
@@ -93,6 +97,31 @@ const io = new Server(server, {
     origin: "http://localhost:5173",
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
+});
+
+io.on("connection", (socket) => {
+  console.log(`User connected: ${socket.id}`);
+
+  // When a user joins a room
+  socket.on("join_room", (roomId) => {
+    socket.join(roomId);
+    console.log(`User with ID: ${socket.id} joined room: ${roomId}`);
+  });
+
+  // When a user sends a message
+  socket.on("send_message", (data) => {
+    console.log(
+      `Message from ${data.author} in room ${data.roomId}: ${data.message}`
+    );
+
+    // Broadcast message to all clients in the room, including sender
+    io.in(data.roomId).emit("receive_group_message", data);
+  });
+
+  // When a user disconnects
+  socket.on("disconnect", () => {
+    console.log(`User disconnected: ${socket.id}`);
+  });
 });
 
 app.get("/", (req, res) => {
