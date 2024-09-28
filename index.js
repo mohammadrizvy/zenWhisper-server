@@ -31,6 +31,7 @@ async function run() {
     const db = client.db("zenWhisper");
     const userCollection = db.collection("users");
 
+    // GET API to fetch all users
     app.get("/users", async (req, res) => {
       const result = await userCollection.find({}).toArray();
       res.send(result);
@@ -58,6 +59,7 @@ async function run() {
       res.status(201).json({ message: "User registered successfully." });
     });
 
+    // POST API for login
     app.post("/login", async (req, res) => {
       const { email, password } = req.body;
 
@@ -94,18 +96,35 @@ run().catch(console.dir);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "http://localhost:5173", // Adjust the frontend URL if needed
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
 
 io.on("connection", (socket) => {
+  const options = {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit", // Two-digit month
+    day: "2-digit", // Two-digit day
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true, // 12-hour format
+  };
+
   console.log(`User connected: ${socket.id}`);
 
   // When a user joins a room
-  socket.on("join_room", (roomId) => {
+  socket.on("join_room", (roomId, username) => {
     socket.join(roomId);
     console.log(`User with ID: ${socket.id} joined room: ${roomId}`);
+
+    // Emit a joining message to all clients in the room
+    io.in(roomId).emit("joining_message", {
+      author: "System",
+      message: `${username} has joined the room.`,
+      time: new Date().toLocaleString("en-US", options),
+    });
   });
 
   // When a user sends a message
@@ -118,16 +137,31 @@ io.on("connection", (socket) => {
     io.in(data.roomId).emit("receive_group_message", data);
   });
 
+  // When someone leaves the room
+  socket.on("leave_room", (roomId, username) => {
+    socket.leave(roomId);
+    console.log(`${username} left room: ${roomId}`);
+
+    // Emit a leave message to all clients in the room
+    io.in(roomId).emit("leave_message", {
+      author: "System",
+      message: `${username} has left the room.`,
+      time: new Date().toLocaleString("en-US", options),
+    });
+  });
+
   // When a user disconnects
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
   });
 });
 
+// Root route for API
 app.get("/", (req, res) => {
   return res.send("Welcome to zenWhisper");
 });
 
+// Start the server on the specified port
 const PORT = 5000;
 server.listen(PORT, () => {
   console.log(`Server is running on PORT: ${PORT}`);
